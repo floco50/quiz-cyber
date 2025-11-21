@@ -8,8 +8,7 @@ export default function Home() {
     async function fetchQuestion() {
       const { data, error } = await supabase
         .from('questions')
-        .select('*')
-        .limit(1);
+        .select('*');
 
       if (error) console.error(error);
       else console.log(data);
