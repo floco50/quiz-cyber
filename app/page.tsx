@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 export default function Home() {
   const [question, setQuestion] = useState<any>(null);
@@ -22,7 +23,12 @@ export default function Home() {
 
   return (
     <div>
-      <h1>Bienvenue sur CyberQuiz</h1>
+      <Alert className="bg-blue-50 border-blue-300 text-blue-800 max-w-xl mx-auto mt-6">
+        <AlertTitle className="text-xl font-semibold">Bienvenue sur CyberQuiz</AlertTitle>
+        <AlertDescription>
+          Un quiz pour tester vos connaissances en cybersécurité.
+        </AlertDescription>
+      </Alert>
 
       {question ? (
         <Card className="max-w-xl mx-auto mt-6">
