@@ -23,7 +23,14 @@ export default function Home() {
           )
         `);
 
-        console.log(data);
+      if (error) {
+        console.error("Erreur Supabase :", error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setQuestion(data[0]); // ➜ On prend la première question
+      }
     }
 
     fetchQuestion();
@@ -50,7 +57,6 @@ export default function Home() {
           <CardContent>
             <p className="mb-4">{question.texte}</p>
 
-            {/* Affichage correct des réponses */}
             {question.reponses?.map((rep: any) => (
               <Button
                 key={rep.id}
