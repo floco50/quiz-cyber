@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabaseClient';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import Image from 'next/image';
+import Link from "next/link";
 
 export default function Home() {
   const [question, setQuestion] = useState<any>(null);
@@ -16,6 +18,9 @@ export default function Home() {
         .select(`
           id,
           texte,
+          images,
+          image_credit_nom,
+          image_credit_url,
           reponses:reponse (
             id,
             texte,
@@ -29,6 +34,7 @@ export default function Home() {
       }
 
       if (data && data.length > 0) {
+        console.log(data);
         setQuestion(data[0]); // ➜ On prend la première question
       }
     }
@@ -48,29 +54,66 @@ export default function Home() {
           Un quiz pour tester vos connaissances en cybersécurité.
         </AlertDescription>
       </Alert>
+      <div className='flex'>
 
-      {question ? (
-        <Card className="max-w-xl mx-auto mt-6">
-          <CardHeader>
-            <CardTitle>Question</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="mb-4">{question.texte}</p>
+        <div className="w-1/2">
+          <Alert className="mt-4 text-sm text-muted-foreground">
+            <AlertDescription>
+              {question?.images ? (
+                <>
+                  <Image
+                    src={question.images}
+                    alt={question.texte || "Illustration"}
+                    width={400}
+                    height={300}
+                    className="rounded"
+                  />
 
-            {question.reponses?.map((rep: any) => (
-              <Button
-                key={rep.id}
-                className="w-full mt-2"
-                onClick={() => handleClick(rep)}
-              >
-                {rep.texte}
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
-      ) : (
-        <p className="text-center mt-4">Chargement de la question...</p>
-      )}
+                  {/* Crédit image dynamique */}
+                  {question.image_credit_nom && question.image_credit_url && (
+                    <Link
+                      href={question.image_credit_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:text-primary block mt-2"
+                    >
+                      {question.image_credit_nom}
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <p>Aucune image disponible</p>
+              )}
+            </AlertDescription>
+          </Alert>
+        </div>
+
+        <div className="w-1/2">
+          {/* {'/images/' + question.images} */}
+          {question ? (
+            <Card className="max-w-xl mx-auto mt-6">
+              <CardHeader>
+                <CardTitle>Question</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-4">{question.texte}</p>
+
+                {question.reponses?.map((rep: any) => (
+                  <Button
+                    key={rep.id}
+                    className="w-full mt-2"
+                    onClick={() => handleClick(rep)}
+                  >
+                    {rep.texte}
+                  </Button>
+                ))}
+              </CardContent>
+            </Card>
+          ) : (
+            <p className="text-center mt-4">Chargement de la question...</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
