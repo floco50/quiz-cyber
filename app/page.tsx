@@ -9,6 +9,7 @@ import Image from 'next/image';
 import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
+import FormulaireJoueur from "@/components/FormulaireJoueur";
 
 export default function Home() {
   const [questions, setQuestions] = useState<any[]>([]);
@@ -17,6 +18,15 @@ export default function Home() {
   const [afficherExplication, setAfficherExplication] = useState(false);
 
   const question = questions[questionIndex];
+
+  const [joueurPret, setJoueurPret] = useState(false);
+
+  useEffect(() => {
+    const joueurId = localStorage.getItem("joueur_id");
+    if (joueurId) {
+      setJoueurPret(true);
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchQuestion() {
@@ -86,85 +96,90 @@ export default function Home() {
 
   return (
     <div>
-      <Toaster />
-      <Alert className="bg-blue-50 border-blue-300 text-blue-800 max-w-xl mx-auto mt-6">
-        <AlertTitle className="text-xl font-semibold">Bienvenue sur CyberQuiz</AlertTitle>
-        <AlertDescription>
-          Un quiz pour tester vos connaissances en cybersécurité.
-        </AlertDescription>
-      </Alert>
-      <Card>
-      <div className='flex'>
-        <div className="w-1/2">
-          <Alert className="mt-4 text-sm text-muted-foreground">
+      {!joueurPret ? (
+        <FormulaireJoueur onJoueurCree={() => setJoueurPret(true)} />
+      ) : (
+        <div>
+          <Toaster />
+          <Alert className="bg-blue-50 border-blue-300 text-blue-800 max-w-xl mx-auto mt-6">
+            <AlertTitle className="text-xl font-semibold">Bienvenue sur CyberQuiz</AlertTitle>
             <AlertDescription>
-              {question?.images ? (
-                <>
-                  <Image
-                    src={question.images}
-                    alt={question.texte || "Illustration"}
-                    width={400}
-                    height={300}
-                    className="rounded"
-                  />
-
-                  {/* Crédit image dynamique */}
-                  {question.image_credit_nom && question.image_credit_url && (
-                    <Link
-                      href={question.image_credit_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline underline-offset-2 hover:text-primary block mt-2"
-                    >
-                      {question.image_credit_nom}
-                    </Link>
-                  )}
-                </>
-              ) : (
-                <p>Aucune image disponible</p>
-              )}
+              Un quiz pour tester vos connaissances en cybersécurité.
             </AlertDescription>
           </Alert>
-        </div>
+          <Card>
+            <div className='flex  flex-col md:flex-row'>
+              <div className="w-full md:w-1/2 p-4">
+                <Alert className="mt-4 text-sm text-muted-foreground">
+                  <AlertDescription>
+                    {question?.images ? (
+                      <>
+                        <Image
+                          src={question.images}
+                          alt={question.texte || "Illustration"}
+                          width={400}
+                          height={300}
+                          className="rounded"
+                        />
 
-        <div className="w-1/2">
-          {/* {'/images/' + question.images} */}
-          {questions.length > 0 ? (
-            <Card className="max-w-xl mx-auto mt-6">
-              <CardHeader>
-                <CardTitle>Question</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="mb-4">{question.texte}</p>
+                        {/* Crédit image dynamique */}
+                        {question.image_credit_nom && question.image_credit_url && (
+                          <Link
+                            href={question.image_credit_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline underline-offset-2 hover:text-primary block mt-2"
+                          >
+                            {question.image_credit_nom}
+                          </Link>
+                        )}
+                      </>
+                    ) : (
+                      <p>Aucune image disponible</p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              </div>
 
-                {question.reponses?.map((rep: any) => (
-                  <Button
-                    key={rep.id}
-                    className="w-full mt-2"
-                    onClick={() => handleClick(rep)}
-                    disabled={afficherExplication}
-                  >
-                    {rep.texte}
-                  </Button>
-                ))}
-                <p className="text-sm text-muted-foreground mb-2">
-                  Question {questionIndex + 1} sur {questions.length}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <p className="text-center mt-4">Chargement de la question...</p>
-          )}
+              <div className="w-full md:w-1/2 p-4">
+                {/* {'/images/' + question.images} */}
+                {questions.length > 0 ? (
+                  <Card className="max-w-xl mx-auto mt-6">
+                    <CardHeader>
+                      <CardTitle>Question</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="mb-4">{question.texte}</p>
+
+                      {question.reponses?.map((rep: any) => (
+                        <Button
+                          key={rep.id}
+                          className="w-full mt-2"
+                          onClick={() => handleClick(rep)}
+                          disabled={afficherExplication}
+                        >
+                          {rep.texte}
+                        </Button>
+                      ))}
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Question {questionIndex + 1} sur {questions.length}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <p className="text-center mt-4">Chargement de la question...</p>
+                )}
+              </div>
+            </div>
+            {afficherExplication && (
+              <Alert className="mt-6 bg-yellow-50 border-yellow-300 text-yellow-800">
+                <AlertTitle>Explication</AlertTitle>
+                <AlertDescription>{explication}</AlertDescription>
+              </Alert>
+            )}
+          </Card>
         </div>
-      </div>
-      {afficherExplication && (
-        <Alert className="mt-6 bg-yellow-50 border-yellow-300 text-yellow-800">
-          <AlertTitle>Explication</AlertTitle>
-          <AlertDescription>{explication}</AlertDescription>
-        </Alert>
       )}
-    </Card>
     </div>
-  
   );
 }

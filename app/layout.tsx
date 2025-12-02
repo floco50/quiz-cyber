@@ -14,7 +14,9 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "CyberQuiz",
-  description: "Un Quiz sur la Cybersécurité développé par Hugo LECROQ",
+  description: "Un quiz pour tester vos connaissances en cybersécurité",
+  manifest: "/manifest.json",
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -24,6 +26,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
+       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="icon" href="/icons/icon-192x192.png" />
+        <meta name="theme-color" content="#0f172a" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
