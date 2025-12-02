@@ -7,6 +7,8 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import Image from 'next/image';
 import Link from "next/link";
+import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function Home() {
   const [questions, setQuestions] = useState<any[]>([]);
@@ -51,13 +53,17 @@ export default function Home() {
   function handleClick(rep: any) {
     if (!question || afficherExplication) return;
 
-    const estBonneReponse = rep.est_correcte;
+    console.log(rep.est_correcte);
 
-    const message = estBonneReponse
-      ? "Bonne réponse !"
-      : "Mauvaise réponse.";
+    let message = "";
+    if (rep.est_correcte == 'true') {
+      message = "Bonne réponse !";
+    } else {
+      message = "Mauvaise réponse !";
+    }
 
-    const explicationTexte = question.explication || message;
+    toast(message);
+    const explicationTexte = message + " " + question.explication || message;
 
     setExplication(explicationTexte);
     setAfficherExplication(true);
@@ -80,14 +86,15 @@ export default function Home() {
 
   return (
     <div>
+      <Toaster />
       <Alert className="bg-blue-50 border-blue-300 text-blue-800 max-w-xl mx-auto mt-6">
         <AlertTitle className="text-xl font-semibold">Bienvenue sur CyberQuiz</AlertTitle>
         <AlertDescription>
           Un quiz pour tester vos connaissances en cybersécurité.
         </AlertDescription>
       </Alert>
+      <Card>
       <div className='flex'>
-
         <div className="w-1/2">
           <Alert className="mt-4 text-sm text-muted-foreground">
             <AlertDescription>
@@ -156,6 +163,8 @@ export default function Home() {
           <AlertDescription>{explication}</AlertDescription>
         </Alert>
       )}
+    </Card>
     </div>
+  
   );
 }
