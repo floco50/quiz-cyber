@@ -10,23 +10,40 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import FormulaireJoueur from "@/components/FormulaireJoueur";
+import Score from "@/components/Score";
 
 export default function Home() {
   const [questions, setQuestions] = useState<any[]>([]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [explication, setExplication] = useState("");
   const [afficherExplication, setAfficherExplication] = useState(false);
-
-  const question = questions[questionIndex];
-
+  const [joueurNom, setJoueurNom] = useState<string>('Sans nom');
   const [joueurPret, setJoueurPret] = useState(false);
+  const question = questions[questionIndex];
+  const [score, setScore] = useState(0);
+  const debut = Date.now();
+  const tempsTotal = Math.floor((Date.now() - debut) / 1000); // en secondes
 
   useEffect(() => {
-    const joueurId = localStorage.getItem("joueur_id");
-    if (joueurId) {
-      setJoueurPret(true);
+    // On ne lance la récupération que si joueurPret est passé à 'true'
+    if (joueurPret) {
+      const userId = localStorage.getItem("supabase_user_id");
+      if (userId) {
+        supabase
+          .from("joueurs")
+          .select("pseudo")
+          .eq("user_id", userId)
+          .single()
+          .then(({ data, error }) => {
+            if (error) {
+              console.error("Erreur lors de la récupération du joueur :", error);
+            } else if (data) {
+              setJoueurNom(data.pseudo);
+            }
+          });
+      }
     }
-  }, []);
+  }, [joueurPret]);
 
   useEffect(() => {
     async function fetchQuestion() {
@@ -63,8 +80,6 @@ export default function Home() {
   function handleClick(rep: any) {
     if (!question || afficherExplication) return;
 
-    console.log(rep.est_correcte);
-
     let message = "";
     if (rep.est_correcte == 'true') {
       message = "Bonne réponse !";
@@ -83,6 +98,11 @@ export default function Home() {
       setExplication("");
       setQuestionIndex((prev) => prev + 1);
     }, 5000);
+
+    if (rep.est_correcte) {
+      setScore(score + 1);
+    }
+
   }
 
   if (!question) {
@@ -101,12 +121,15 @@ export default function Home() {
       ) : (
         <div>
           <Toaster />
-          <Alert className="bg-blue-50 border-blue-300 text-blue-800 max-w-xl mx-auto mt-6">
-            <AlertTitle className="text-xl font-semibold">Bienvenue sur CyberQuiz</AlertTitle>
+          <Alert className="bg-green-50 border-green-300 text-green-800 max-w-xl mx-auto mt-6">
+            <AlertTitle className="text-xl font-semibold">
+              Bienvenue {joueurNom} !
+            </AlertTitle>
             <AlertDescription>
-              Un quiz pour tester vos connaissances en cybersécurité.
+              Préparez-vous à tester vos connaissances en cybersécurité.
             </AlertDescription>
           </Alert>
+          <Score actuel={score} total={questions.length} />
           <Card>
             <div className='flex  flex-col md:flex-row'>
               <div className="w-full md:w-1/2 p-4">
