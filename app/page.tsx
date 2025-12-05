@@ -21,8 +21,7 @@ export default function Home() {
   const [joueurPret, setJoueurPret] = useState(false);
   const question = questions[questionIndex];
   const [score, setScore] = useState(0);
-  const debut = Date.now();
-  const tempsTotal = Math.floor((Date.now() - debut) / 1000); // en secondes
+  const [debut, setDebut] = useState<number | null>(null);
 
   useEffect(() => {
     // On ne lance la récupération que si joueurPret est passé à 'true'
@@ -75,6 +74,7 @@ export default function Home() {
     }
 
     fetchQuestion();
+    setDebut(Date.now());
   }, []);
 
   function handleClick(rep: any) {
@@ -100,10 +100,41 @@ export default function Home() {
     }, 5000);
 
     if (rep.est_correcte) {
-      setScore(score + 1);
+      setScore((prev) => prev + 1);
+      enregistrerScore(score);
     }
 
   }
+
+  async function enregistrerScore(score: number) {
+  const joueurId = localStorage.getItem("joueur_id");
+  if (!joueurId || debut === null) return;
+
+  const temps = Math.floor((Date.now() - debut) / 1000);
+
+  const { data: classementData, error: classementError } = await supabase
+    .from("classement")
+    .insert({
+      score,
+      temps,
+      date_partie: new Date().toISOString().split("T")[0],
+    })
+    .select();
+
+  if (classementError) {
+    console.error("Erreur enregistrement score :", classementError);
+    return;
+  }
+
+  const idClassement = classementData?.[0]?.id;
+
+  if (idClassement) {
+    await supabase.from("classement_joueur").insert({
+      id_joueur: joueurId,
+      id_classement: idClassement,
+    });
+  }
+}
 
   if (!question) {
     return (
