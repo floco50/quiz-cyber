@@ -17,14 +17,15 @@ export default function Home() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [explication, setExplication] = useState("");
   const [afficherExplication, setAfficherExplication] = useState(false);
+  const [reponseCorrecte, setReponseCorrecte] = useState(false);
   const [joueurNom, setJoueurNom] = useState<string>('Sans nom');
   const [joueurPret, setJoueurPret] = useState(false);
   const question = questions[questionIndex];
   const [score, setScore] = useState(0);
   const [debut, setDebut] = useState<number | null>(null);
+  const [quizTermine, setQuizTermine] = useState(false);
 
   useEffect(() => {
-    // On ne lance la récupération que si joueurPret est passé à 'true'
     if (joueurPret) {
       const userId = localStorage.getItem("supabase_user_id");
       if (userId) {
@@ -60,7 +61,7 @@ export default function Home() {
             texte,
             est_correcte
           )
-        `).order('id');
+        `).order('id', { ascending: true });
 
       if (error) {
         console.error("Erreur Supabase :", error);
@@ -77,11 +78,20 @@ export default function Home() {
     setDebut(Date.now());
   }, []);
 
+  useEffect(() => {
+    if (questionIndex >= questions.length && questions.length > 0 && !quizTermine) {
+      setQuizTermine(true);
+      enregistrerMeilleurScore();
+    }
+  }, [questionIndex, questions.length, quizTermine]);
+
   function handleClick(rep: any) {
     if (!question || afficherExplication) return;
 
     let message = "";
-    if (rep.est_correcte == 'true') {
+    const estCorrect = rep.est_correcte == 'true';
+    
+    if (estCorrect) {
       message = "Bonne réponse !";
     } else {
       message = "Mauvaise réponse !";
@@ -92,6 +102,7 @@ export default function Home() {
 
     setExplication(explicationTexte);
     setAfficherExplication(true);
+    setReponseCorrecte(estCorrect);
 
     setTimeout(() => {
       setAfficherExplication(false);
@@ -103,46 +114,104 @@ export default function Home() {
       setScore((prev) => prev + 1);
       enregistrerScore(score);
     }
-
   }
 
   async function enregistrerScore(score: number) {
-  const joueurId = localStorage.getItem("joueur_id");
-  if (!joueurId || debut === null) return;
+    const joueurId = localStorage.getItem("joueur_id");
+    if (!joueurId || debut === null) return;
 
-  const temps = Math.floor((Date.now() - debut) / 1000);
+    const temps = Math.floor((Date.now() - debut) / 1000);
 
-  const { data: classementData, error: classementError } = await supabase
-    .from("classement")
-    .insert({
-      score,
-      temps,
-      date_partie: new Date().toISOString().split("T")[0],
-    })
-    .select();
+    const { data: classementData, error: classementError } = await supabase
+      .from("classement")
+      .insert({
+        score,
+        temps,
+        date_partie: new Date().toISOString().split("T")[0],
+      })
+      .select();
 
-  if (classementError) {
-    console.error("Erreur enregistrement score :", classementError);
-    return;
+    if (classementError) {
+      console.error("Erreur enregistrement score :", classementError);
+      return;
+    }
+
+    const idClassement = classementData?.[0]?.id;
+
+    if (idClassement) {
+      await supabase.from("classement_joueur").insert({
+        id_joueur: joueurId,
+        id_classement: idClassement,
+      });
+    }
   }
 
-  const idClassement = classementData?.[0]?.id;
-
-  if (idClassement) {
-    await supabase.from("classement_joueur").insert({
-      id_joueur: joueurId,
-      id_classement: idClassement,
-    });
-  }
-}
-
-  if (!question) {
+  if (!question && questions.length > 0) {
     return (
-      <div className="text-center mt-10">
-        <h2 className="text-2xl font-bold">Quiz terminé !</h2>
-        <p className="mt-4 text-muted-foreground">Merci d’avoir participé.</p>
+      <div className="text-center mt-20 max-w-2xl mx-auto">
+        <h2 className="text-4xl font-bold mb-8 text-primary">Quiz terminé !</h2>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Votre résultat</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-xl">
+            <p>Score : <span className="font-bold text-green-600">{score}</span> / {questions.length}</p>
+            <p className="text-muted-foreground">
+              Temps : {debut ? Math.floor((Date.now() - debut) / 1000) : 0} secondes
+            </p>
+            {score === questions.length && (
+              <p className="text-2xl">Parfait ! 100% de bonnes réponses !</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="mt-8">
+          <p className="text-lg mb-4">
+            Merci {joueurNom} pour votre participation !
+          </p>
+        </div>
       </div>
     );
+  }
+
+  async function enregistrerMeilleurScore() {
+    const userId = localStorage.getItem("supabase_user_id");
+    if (!userId || debut === null || questions.length === 0) return;
+
+    const tempsTotal = Math.floor((Date.now() - debut) / 1000);
+    const scoreFinal = score;
+    const aujourdHui = new Date().toISOString().split("T")[0];
+
+    const { data: joueur, error } = await supabase
+      .from("joueurs")
+      .select("meilleur_score")
+      .eq("user_id", userId)
+      .single();
+
+    if (error || !joueur) {
+      console.error("Erreur récupération joueur :", error);
+      return;
+    }
+
+    const ancienMeilleur = joueur.meilleur_score || 0;
+
+    if (scoreFinal > ancienMeilleur) {
+      const { error: updateError } = await supabase
+        .from("joueurs")
+        .update({
+          meilleur_score: scoreFinal,
+          meilleur_temps: tempsTotal,
+          date_meilleur_score: aujourdHui,
+        })
+        .eq("user_id", userId);
+
+      if (updateError) {
+        console.error("Erreur mise à jour record :", updateError);
+      } else {
+        console.log("Nouveau record !", scoreFinal, "points en", tempsTotal, "s");
+      }
+    }
   }
 
   return (
@@ -161,77 +230,84 @@ export default function Home() {
             </AlertDescription>
           </Alert>
           <Score actuel={score} total={questions.length} />
-          <Card>
-            <div className='flex  flex-col md:flex-row'>
-              <div className="w-full md:w-1/2 p-4">
-                <Alert className="mt-4 text-sm text-muted-foreground">
-                  <AlertDescription>
-                    {question?.images ? (
-                      <>
+          
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+              {/* Colonne Image */}
+              <Card className="overflow-hidden">
+                <CardContent className="p-6">
+                  {question?.images ? (
+                    <div className="space-y-3">
+                      <div className="relative w-full aspect-video">
                         <Image
                           src={question.images}
                           alt={question.texte || "Illustration"}
-                          width={400}
-                          height={300}
-                          className="rounded"
+                          fill
+                          className="rounded-lg object-cover"
                         />
-
-                        {/* Crédit image dynamique */}
-                        {question.image_credit_nom && question.image_credit_url && (
-                          <Link
-                            href={question.image_credit_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline underline-offset-2 hover:text-primary block mt-2"
-                          >
-                            {question.image_credit_nom}
-                          </Link>
-                        )}
-                      </>
-                    ) : (
-                      <p>Aucune image disponible</p>
-                    )}
-                  </AlertDescription>
-                </Alert>
-              </div>
-
-              <div className="w-full md:w-1/2 p-4">
-                {/* {'/images/' + question.images} */}
-                {questions.length > 0 ? (
-                  <Card className="max-w-xl mx-auto mt-6">
-                    <CardHeader>
-                      <CardTitle>Question</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="mb-4">{question.texte}</p>
-
-                      {question.reponses?.map((rep: any) => (
-                        <Button
-                          key={rep.id}
-                          className="w-full mt-2"
-                          onClick={() => handleClick(rep)}
-                          disabled={afficherExplication}
+                      </div>
+                      {question.image_credit_nom && question.image_credit_url && (
+                        <Link
+                          href={question.image_credit_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-muted-foreground underline underline-offset-2 hover:text-primary inline-block"
                         >
-                          {rep.texte}
-                        </Button>
-                      ))}
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Question {questionIndex + 1} sur {questions.length}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <p className="text-center mt-4">Chargement de la question...</p>
-                )}
-              </div>
+                          {question.image_credit_nom}
+                        </Link>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
+                      <p className="text-muted-foreground">Aucune image disponible</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Colonne Question */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Question</span>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {questionIndex + 1} / {questions.length}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {questions.length > 0 ? (
+                    <>
+                      <p className="text-lg leading-relaxed">{question.texte}</p>
+                      
+                      <div className="space-y-3 pt-2">
+                        {question.reponses?.map((rep: any) => (
+                          <Button
+                            key={rep.id}
+                            className="w-full h-auto py-3 px-4 whitespace-normal text-left justify-start"
+                            onClick={() => handleClick(rep)}
+                            disabled={afficherExplication}
+                            variant={afficherExplication ? "secondary" : "default"}
+                          >
+                            {rep.texte}
+                          </Button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-center text-muted-foreground">Chargement de la question...</p>
+                  )}
+                </CardContent>
+              </Card>
             </div>
+
             {afficherExplication && (
-              <Alert className="mt-6 bg-yellow-50 border-yellow-300 text-yellow-800">
+              <Alert className={`mt-6 ${reponseCorrecte ? 'bg-green-50 border-green-300 text-green-800' : 'bg-yellow-50 border-yellow-300 text-yellow-800'}`}>
                 <AlertTitle>Explication</AlertTitle>
                 <AlertDescription>{explication}</AlertDescription>
               </Alert>
             )}
-          </Card>
+          </div>
         </div>
       )}
     </div>
