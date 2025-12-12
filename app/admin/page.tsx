@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Shield, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
+import bcrypt from "bcryptjs";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState('');
@@ -28,62 +29,43 @@ export default function AdminLogin() {
     setError('');
 
     try {
-      // Connexion avec Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) {
-        console.error('Erreur auth:', authError);
-        setError('Email ou mot de passe incorrect');
-        setLoading(false);
-        return;
-      }
-
-      if (!authData.user) {
-        setError('Erreur de connexion');
-        setLoading(false);
-        return;
-      }
-
-      // Vérifier si l'utilisateur est admin
-      const { data: joueurData, error: joueurError } = await supabase
-        .from('joueurs')
-        .select('est_admin, pseudo')
-        .eq('user_id', authData.user.id)
+      // 1. Récupérer l'admin dans la base Supabase
+      const { data: admin, error: adminError } = await supabase
+        .from("admin_users")
+        .select("*")
+        .eq("email", email)
         .single();
 
-      if (joueurError) {
-        console.error('Erreur joueur:', joueurError);
-        setError('Utilisateur non trouvé dans la base de données');
-        await supabase.auth.signOut();
+      if (adminError || !admin) {
+        setError("Email ou mot de passe incorrect");
         setLoading(false);
         return;
       }
 
-      if (!joueurData.est_admin) {
-        setError('Accès refusé. Vous n\'êtes pas administrateur.');
-        await supabase.auth.signOut();
+      // 2. Vérification du mot de passe avec bcrypt
+      const passwordOk = await bcrypt.compare(password, admin.password_hash);
+
+      if (!passwordOk) {
+        setError("Email ou mot de passe incorrect");
         setLoading(false);
         return;
       }
 
-      // Connexion réussie
-      toast.success(`Bienvenue ${joueurData.pseudo} !`);
+      // 3. Connexion réussie !
+      toast.success("Connexion réussie !");
       
-      // Stocker l'info admin dans localStorage
-      localStorage.setItem('is_admin', 'true');
-      localStorage.setItem('admin_pseudo', joueurData.pseudo);
+      // Enregistrer la session admin
+      localStorage.setItem("is_admin", "true");
+      localStorage.setItem("admin_email", email);
 
-      // Redirection vers le dashboard
+      // 4. Redirection
       setTimeout(() => {
-        router.push('/admin/dashboard');
-      }, 1000);
+        router.push("/admin/dashboard");
+      }, 800);
 
     } catch (err) {
-      console.error('Erreur:', err);
-      setError('Une erreur est survenue. Veuillez réessayer.');
+      console.error("Erreur:", err);
+      setError("Une erreur est survenue. Veuillez réessayer.");
       setLoading(false);
     }
   };
@@ -97,7 +79,7 @@ export default function AdminLogin() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center p-4">
       <Toaster />
-      
+
       <Card className="w-full max-w-md bg-white/10 backdrop-blur-md border-white/20">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
@@ -203,7 +185,7 @@ export default function AdminLogin() {
         </CardContent>
       </Card>
 
-      {/* Coins décoratifs */}
+      {/* Décorations */}
       <div className="fixed top-0 left-0 w-32 h-32 bg-blue-500/10 rounded-br-full blur-3xl"></div>
       <div className="fixed bottom-0 right-0 w-32 h-32 bg-purple-500/10 rounded-tl-full blur-3xl"></div>
     </div>
