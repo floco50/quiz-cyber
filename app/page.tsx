@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import FormulaireJoueur from "@/components/FormulaireJoueur";
 import Score from "@/components/Score";
+import Classement from "@/components/Classement";
 
 export default function Home() {
   const [questions, setQuestions] = useState<any[]>([]);
@@ -56,12 +57,14 @@ export default function Home() {
           image_credit_nom,
           image_credit_url,
           explication,
-          reponses:reponse (
+          reponses:reponse!inner (
             id,
             texte,
             est_correcte
           )
-        `).order('id', { ascending: true });
+        `)
+        .order("id", { ascending: true })          // tri des questions
+      .order("texte", { foreignTable: "reponse" }) // tri des réponses
 
       if (error) {
         console.error("Erreur Supabase :", error);
@@ -171,6 +174,7 @@ export default function Home() {
             Merci {joueurNom} pour votre participation !
           </p>
         </div>
+             <Classement />
       </div>
     );
   }
