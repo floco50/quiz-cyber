@@ -41,18 +41,18 @@ export default function AdminLayout({
 
       // Vérifier si l'utilisateur est admin
       const { data: joueur, error: joueurError } = await supabase
-        .from('joueurs')
-        .select('est_admin, pseudo')
+        .from('admin-users')
+        .select('email, password')
         .eq('user_id', session.user.id)
         .single();
 
       if (joueurError) {
-        console.error('Erreur récupération joueur:', joueurError);
+        console.log('Erreur récupération joueur:', joueurError);
         router.push('/admin');
         return;
       }
 
-      if (!joueur || !joueur.est_admin) {
+      if (!joueur || !joueur.email) {
         console.log('Utilisateur non admin');
         toast.error('Accès refusé : droits administrateur requis');
         await supabase.auth.signOut();
@@ -62,9 +62,9 @@ export default function AdminLayout({
 
       // Utilisateur est admin
       setIsAdmin(true);
-      setAdminPseudo(joueur.pseudo);
+      setAdminPseudo(joueur.email);
       localStorage.setItem('is_admin', 'true');
-      localStorage.setItem('admin_pseudo', joueur.pseudo);
+      localStorage.setItem('admin_pseudo', joueur.email);
       
     } catch (err) {
       console.error('Erreur vérification admin:', err);

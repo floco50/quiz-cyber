@@ -15,7 +15,7 @@ export default function AdminDashboard() {
   const [questions, setQuestions] = useState([]);
   const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); // État d'authentification
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
   // --- Formulaire d'ajout de question ---
@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const [newImageCreditURL, setNewImageCreditURL] = useState("");
 
   // --- Gestion des Inputs de réponse dynamiques ---
+  // On utilise Map ou un objet avec des IDs de question comme clés
   const [newAnswerTexts, setNewAnswerTexts] = useState({});
 
   // ----------------------------------------------------
@@ -34,15 +35,16 @@ export default function AdminDashboard() {
   useEffect(() => {
     // Vérification rapide de l'authentification basée sur localStorage
     if (localStorage.getItem("is_admin") !== "true") {
-      router.push("/admin/login"); // Rediriger si non admin
+      // Pour éviter un flash de contenu, on laisse le Loader2 si non authentifié.
+      router.push("/admin/"); 
       return;
     }
     setIsAdmin(true);
     
     // Charger les données une fois l'admin vérifié
     const fetchData = async () => {
-        await loadQuestions();
-        await loadStats();
+        // Chargement simultané pour la rapidité
+        await Promise.all([loadQuestions(), loadStats()]);
         setLoading(false);
     }
     fetchData();
@@ -63,6 +65,7 @@ export default function AdminDashboard() {
 
   // Charger questions
   const loadQuestions = async () => {
+    // Utilisation de l'alias 'reponses' pour une meilleure clarté dans le state.
     const { data, error } = await supabase.from("questions").select(`
       id,
       texte,
@@ -71,7 +74,7 @@ export default function AdminDashboard() {
       image_credit_nom,
       image_credit_url,
       reponses:reponse(id, texte, est_correcte)
-    `).order("id", { ascending: false }); // Trié par ID décroissant pour voir les nouvelles
+    `).order("id", { ascending: false });
 
     if (error) {
       console.error(error);
@@ -85,20 +88,23 @@ export default function AdminDashboard() {
   // Charger statistiques (nécessite une fonction RPC 'get_question_stats' dans Supabase)
   const loadStats = async () => {
     const { data, error } = await supabase.rpc("get_question_stats");
-    if (error) console.error("Erreur RPC get_question_stats:", error);
+    if (error) {
+        console.error("Erreur RPC get_question_stats:", error);
+        toast.error("Erreur lors du chargement des statistiques.");
+    }
     else setStats(data);
   };
 
   // Ajouter une question
   const addQuestion = async () => {
-    if (!newQuestion) return toast.error("La question est vide");
+    if (!newQuestion.trim()) return toast.error("La question est vide");
 
     const { error } = await supabase.from("questions").insert({
-      texte: newQuestion,
-      explication: newExplication || null,
-      images: newImage || null,
-      image_credit_nom: newImageCreditName || null,
-      image_credit_url: newImageCreditURL || null,
+      texte: newQuestion.trim(),
+      explication: newExplication.trim() || null,
+      images: newImage.trim() || null,
+      image_credit_nom: newImageCreditName.trim() || null,
+      image_credit_url: newImageCreditURL.trim() || null,
     });
 
     if (error) {
@@ -113,7 +119,8 @@ export default function AdminDashboard() {
     setNewImage("");
     setNewImageCreditName("");
     setNewImageCreditURL("");
-    loadQuestions();
+    // Recharger uniquement les questions, les stats peuvent être chargées plus tard ou manuellement.
+    loadQuestions(); 
   };
 
   // Gestionnaire pour l'ajout de réponse (Input dynamique)
@@ -147,7 +154,7 @@ export default function AdminDashboard() {
     // Effacer l'input et recharger la liste
     setNewAnswerTexts(prev => {
         const newState = { ...prev };
-        delete newState[questionId]; 
+        delete newState[questionId]; // Supprime la clé spécifique
         return newState;
     });
     loadQuestions(); 
@@ -158,9 +165,9 @@ export default function AdminDashboard() {
   // ----------------------------------------------------
   if (!isAdmin || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
         <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-        <p className="ml-3">Chargement du Dashboard...</p>
+        <p className="mt-3">Chargement du Dashboard...</p>
       </div>
     );
   }
@@ -211,7 +218,11 @@ export default function AdminDashboard() {
                 <CardContent>
                   {q.images && (
                     <>
-                    <img src={q.images} alt={`Image pour Q${q.id}`} className="w-full max-w-xs h-auto rounded mb-3 border border-white/10" />
+                    <img 
+                      src={q.images} 
+                      alt={`Image pour Q${q.id}`} 
+                      className="w-full max-w-xs h-auto rounded mb-3 border border-white/10 object-cover" 
+                    />
                     {(q.image_credit_nom || q.image_credit_url) && (
                         <p className="text-xs italic mb-2 text-gray-400">
                           Crédit : 
@@ -226,10 +237,12 @@ export default function AdminDashboard() {
                     )}
                     </>
                   )}
-                  {q.explication && <p className="text-sm opacity-90 mb-4 bg-gray-700/50 p-3 rounded border border-gray-600/50 text-gray-300">**Explication :** {q.explication}</p>}
+                  {/* Utilisation de <p> avec style au lieu de ** pour la mise en forme Markdown dans JSX */}
+                  {q.explication && <p className="text-sm opacity-90 mb-4 bg-gray-700/50 p-3 rounded border border-gray-600/50 text-gray-300"><span className="font-bold">Explication :</span> {q.explication}</p>}
                   
-                  <h3 className="font-semibold mb-2 text-lg text-gray-200">Réponses ({q.reponses.length}) :</h3>
+                  <h3 className="font-semibold mb-2 text-lg text-gray-200">Réponses ({q.reponses?.length || 0}) :</h3>
                   <ul className="space-y-2">
+                    {/* S'assurer que q.reponses est un tableau avant de mapper */}
                     {q.reponses && q.reponses.length > 0 ? (
                         q.reponses.map((r) => (
                             <li 
@@ -262,7 +275,8 @@ export default function AdminDashboard() {
                     <div className="flex gap-3">
                       <Button
                         onClick={() => addAnswer(q.id, true)}
-                        disabled={!newAnswerTexts[q.id]}
+                        // Désactivation si l'input pour cet ID est vide
+                        disabled={!newAnswerTexts[q.id] || newAnswerTexts[q.id].trim() === ""}
                         className="flex-1 bg-green-600 hover:bg-green-700 font-semibold"
                       >
                         Bonne réponse
@@ -270,7 +284,8 @@ export default function AdminDashboard() {
 
                       <Button
                         onClick={() => addAnswer(q.id, false)}
-                        disabled={!newAnswerTexts[q.id]}
+                        // Désactivation si l'input pour cet ID est vide
+                        disabled={!newAnswerTexts[q.id] || newAnswerTexts[q.id].trim() === ""}
                         className="flex-1 bg-red-600 hover:bg-red-700 font-semibold"
                       >
                         Mauvaise réponse
@@ -323,7 +338,8 @@ export default function AdminDashboard() {
                 <Button 
                     className="w-full py-3 bg-blue-600 hover:bg-blue-700 font-semibold text-lg" 
                     onClick={addQuestion}
-                    disabled={!newQuestion}
+                    // Désactivation si la question est vide après trim()
+                    disabled={!newQuestion.trim()}
                 >
                     Ajouter la Question
                 </Button>
@@ -338,7 +354,7 @@ export default function AdminDashboard() {
                 <CardTitle className="text-2xl text-blue-300">📊 Statistiques des Questions</CardTitle>
               </CardHeader>
               <CardContent>
-                {stats.length === 0 && <p className="text-yellow-400">Aucune donnée statistique pour le moment. (Vérifiez la fonction Supabase RPC)</p>}
+                {stats.length === 0 && <p className="text-yellow-400">Aucune donnée statistique pour le moment. (Vérifiez la fonction Supabase RPC 'get_question_stats')</p>}
                 {stats.map((s) => (
                   <div key={s.question_id} className="mb-3 p-3 rounded bg-gray-700/30 border border-gray-600/50">
                     <p className="font-bold text-lg text-gray-200">Question ID: {s.question_id}</p>
@@ -354,7 +370,6 @@ export default function AdminDashboard() {
           </TabsContent>
         </Tabs>
       </div>
-      
     </div>
   );
 }
