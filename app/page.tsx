@@ -12,22 +12,47 @@ import { Toaster } from "@/components/ui/sonner";
 import FormulaireJoueur from "@/components/FormulaireJoueur";
 import Score from "@/components/Score";
 import Classement from "@/components/Classement";
+// Ajout d'une icône pour le style
+import { ShieldCheck, PlayCircle, Trophy } from 'lucide-react';
 
 export default function Home() {
+  // --- ÉTATS ---
+  const [quizLance, setQuizLance] = useState(false); // Nouvel état pour la page d'accueil
+  const [joueurPret, setJoueurPret] = useState(false);
   const [questions, setQuestions] = useState<any[]>([]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [explication, setExplication] = useState("");
   const [afficherExplication, setAfficherExplication] = useState(false);
   const [reponseCorrecte, setReponseCorrecte] = useState(false);
   const [joueurNom, setJoueurNom] = useState<string>('Sans nom');
-  const [joueurPret, setJoueurPret] = useState(false);
-  const question = questions[questionIndex];
   const [score, setScore] = useState(0);
   const [debut, setDebut] = useState<number | null>(null);
   const [quizTermine, setQuizTermine] = useState(false);
 
+  const question = questions[questionIndex];
+
+  // 1. CHARGEMENT DES QUESTIONS (Au montage du composant)
+  useEffect(() => {
+    async function fetchQuestion() {
+      const { data, error } = await supabase
+        .from("questions")
+        .select(`
+          id, texte, images, image_credit_nom, image_credit_url, explication,
+          reponses:reponse!inner (id, texte, est_correcte)
+        `)
+        .order("id", { ascending: true })
+        .order("texte", { foreignTable: "reponse" });
+
+      if (error) console.error("Erreur Supabase :", error);
+      if (data) setQuestions(data);
+    }
+    fetchQuestion();
+  }, []);
+
+  // 2. RÉCUPÉRATION DU NOM DU JOUEUR (Quand il a validé son pseudo)
   useEffect(() => {
     if (joueurPret) {
+      setDebut(Date.now()); // On démarre le chrono ici !
       const userId = localStorage.getItem("supabase_user_id");
       if (userId) {
         supabase
@@ -35,285 +60,191 @@ export default function Home() {
           .select("pseudo")
           .eq("user_id", userId)
           .single()
-          .then(({ data, error }) => {
-            if (error) {
-              console.error("Erreur lors de la récupération du joueur :", error);
-            } else if (data) {
-              setJoueurNom(data.pseudo);
-            }
+          .then(({ data }) => {
+            if (data) setJoueurNom(data.pseudo);
           });
       }
     }
   }, [joueurPret]);
 
-  useEffect(() => {
-    async function fetchQuestion() {
-      const { data, error } = await supabase
-        .from("questions")
-        .select(`
-          id,
-          texte,
-          images,
-          image_credit_nom,
-          image_credit_url,
-          explication,
-          reponses:reponse!inner (
-            id,
-            texte,
-            est_correcte
-          )
-        `)
-        .order("id", { ascending: true })          // tri des questions
-      .order("texte", { foreignTable: "reponse" }) // tri des réponses
+  // 3. LOGIQUE DU QUIZ (Réponse, Score, Fin)
+  function handleClick(rep: any) {
+    if (!question || afficherExplication) return;
+    
+    // Correction ici : Supabase peut renvoyer un string ou boolean selon ta config
+    const estCorrect = String(rep.est_correcte) === 'true' || rep.est_correcte === true;
+    const message = estCorrect ? "Bonne réponse !" : "Mauvaise réponse !";
 
-      if (error) {
-        console.error("Erreur Supabase :", error);
-        return;
-      }
+    toast(message, { icon: estCorrect ? "✅" : "❌" });
+    setExplication(message + " " + (question.explication || ""));
+    setAfficherExplication(true);
+    setReponseCorrecte(estCorrect);
 
-      if (data && data.length > 0) {
-        console.log(data);
-        setQuestions(data || []);
-      }
-    }
+    if (estCorrect) setScore((prev) => prev + 1);
 
-    fetchQuestion();
-    setDebut(Date.now());
-  }, []);
+    setTimeout(() => {
+      setAfficherExplication(false);
+      setQuestionIndex((prev) => prev + 1);
+    }, 4000);
+  }
 
+  // Enregistrement final quand l'index dépasse la longueur
   useEffect(() => {
     if (questionIndex >= questions.length && questions.length > 0 && !quizTermine) {
       setQuizTermine(true);
       enregistrerMeilleurScore();
     }
-  }, [questionIndex, questions.length, quizTermine]);
+  }, [questionIndex]);
 
-  function handleClick(rep: any) {
-    if (!question || afficherExplication) return;
-
-    let message = "";
-    const estCorrect = rep.est_correcte == 'true';
+  async function enregistrerMeilleurScore() {
+    const userId = localStorage.getItem("supabase_user_id");
+    if (!userId || !debut) return;
+    const tempsTotal = Math.floor((Date.now() - debut) / 1000);
     
-    if (estCorrect) {
-      message = "Bonne réponse !";
-    } else {
-      message = "Mauvaise réponse !";
-    }
-
-    toast(message);
-    const explicationTexte = message + " " + question.explication || message;
-
-    setExplication(explicationTexte);
-    setAfficherExplication(true);
-    setReponseCorrecte(estCorrect);
-
-    setTimeout(() => {
-      setAfficherExplication(false);
-      setExplication("");
-      setQuestionIndex((prev) => prev + 1);
-    }, 5000);
-
-    if (rep.est_correcte) {
-      setScore((prev) => prev + 1);
-      enregistrerScore(score);
+    const { data: joueur } = await supabase.from("joueurs").select("meilleur_score").eq("user_id", userId).single();
+    if (joueur && score > (joueur.meilleur_score || 0)) {
+      await supabase.from("joueurs").update({
+        meilleur_score: score,
+        meilleur_temps: tempsTotal,
+        date_meilleur_score: new Date().toISOString().split("T")[0],
+      }).eq("user_id", userId);
     }
   }
 
-  async function enregistrerScore(score: number) {
-    const joueurId = localStorage.getItem("joueur_id");
-    if (!joueurId || debut === null) return;
+  // --- RENDU ---
 
-    const temps = Math.floor((Date.now() - debut) / 1000);
-
-    const { data: classementData, error: classementError } = await supabase
-      .from("classement")
-      .insert({
-        score,
-        temps,
-        date_partie: new Date().toISOString().split("T")[0],
-      })
-      .select();
-
-    if (classementError) {
-      console.error("Erreur enregistrement score :", classementError);
-      return;
-    }
-
-    const idClassement = classementData?.[0]?.id;
-
-    if (idClassement) {
-      await supabase.from("classement_joueur").insert({
-        id_joueur: joueurId,
-        id_classement: idClassement,
-      });
-    }
-  }
-
-  if (!question && questions.length > 0) {
+  // A. ÉCRAN DE FIN
+  if (quizTermine) {
     return (
-      <div className="text-center mt-20 max-w-2xl mx-auto">
-        <h2 className="text-4xl font-bold mb-8 text-primary">Quiz terminé !</h2>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Votre résultat</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-xl">
-            <p>Score : <span className="font-bold text-green-600">{score}</span> / {questions.length}</p>
-            <p className="text-muted-foreground">
-              Temps : {debut ? Math.floor((Date.now() - debut) / 1000) : 0} secondes
-            </p>
-            {score === questions.length && (
-              <p className="text-2xl">Parfait ! 100% de bonnes réponses !</p>
-            )}
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-50">
+        <h2 className="text-4xl font-bold mb-8 text-primary">Félicitations !</h2>
+        <Card className="w-full max-w-md mb-8">
+          <CardHeader><CardTitle className="text-center">Ton Résultat</CardTitle></CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-5xl font-bold text-blue-600">{score} / {questions.length}</p>
+            <p className="text-muted-foreground italic">Bravo {joueurNom} !</p>
           </CardContent>
         </Card>
-
-        <div className="mt-8">
-          <p className="text-lg mb-4">
-            Merci {joueurNom} pour votre participation !
-          </p>
-        </div>
-             <Classement />
+        <Classement />
+        <Button onClick={() => window.location.reload()} className="mt-8">Rejouer</Button>
       </div>
     );
   }
 
-  async function enregistrerMeilleurScore() {
-    const userId = localStorage.getItem("supabase_user_id");
-    if (!userId || debut === null || questions.length === 0) return;
-
-    const tempsTotal = Math.floor((Date.now() - debut) / 1000);
-    const scoreFinal = score;
-    const aujourdHui = new Date().toISOString().split("T")[0];
-
-    const { data: joueur, error } = await supabase
-      .from("joueurs")
-      .select("meilleur_score")
-      .eq("user_id", userId)
-      .single();
-
-    if (error || !joueur) {
-      console.error("Erreur récupération joueur :", error);
-      return;
-    }
-
-    const ancienMeilleur = joueur.meilleur_score || 0;
-
-    if (scoreFinal > ancienMeilleur) {
-      const { error: updateError } = await supabase
-        .from("joueurs")
-        .update({
-          meilleur_score: scoreFinal,
-          meilleur_temps: tempsTotal,
-          date_meilleur_score: aujourdHui,
-        })
-        .eq("user_id", userId);
-
-      if (updateError) {
-        console.error("Erreur mise à jour record :", updateError);
-      } else {
-        console.log("Nouveau record !", scoreFinal, "points en", tempsTotal, "s");
-      }
-    }
-  }
-
-  return (
-    <div>
-      {!joueurPret ? (
-        <FormulaireJoueur onJoueurCree={() => setJoueurPret(true)} />
-      ) : (
-        <div>
-          <Toaster />
-          <Alert className="bg-green-50 border-green-300 text-green-800 max-w-xl mx-auto mt-6">
-            <AlertTitle className="text-xl font-semibold">
-              Bienvenue {joueurNom} !
-            </AlertTitle>
-            <AlertDescription>
-              Préparez-vous à tester vos connaissances en cybersécurité.
-            </AlertDescription>
-          </Alert>
-          <Score actuel={score} total={questions.length} />
-          
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-              {/* Colonne Image */}
-              <Card className="overflow-hidden">
-                <CardContent className="p-6">
-                  {question?.images ? (
-                    <div className="space-y-3">
-                      <div className="relative w-full aspect-video">
-                        <Image
-                          src={question.images}
-                          alt={question.texte || "Illustration"}
-                          fill
-                          className="rounded-lg object-cover"
-                        />
-                      </div>
-                      {question.image_credit_nom && question.image_credit_url && (
-                        <Link
-                          href={question.image_credit_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-muted-foreground underline underline-offset-2 hover:text-primary inline-block"
-                        >
-                          {question.image_credit_nom}
-                        </Link>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-64 bg-muted rounded-lg">
-                      <p className="text-muted-foreground">Aucune image disponible</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Colonne Question */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Question</span>
-                    <span className="text-sm font-normal text-muted-foreground">
-                      {questionIndex + 1} / {questions.length}
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {questions.length > 0 ? (
-                    <>
-                      <p className="text-lg leading-relaxed">{question.texte}</p>
-                      
-                      <div className="space-y-3 pt-2">
-                        {question.reponses?.map((rep: any) => (
-                          <Button
-                            key={rep.id}
-                            className="w-full h-auto py-3 px-4 whitespace-normal text-left justify-start"
-                            onClick={() => handleClick(rep)}
-                            disabled={afficherExplication}
-                            variant={afficherExplication ? "secondary" : "default"}
-                          >
-                            {rep.texte}
-                          </Button>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-center text-muted-foreground">Chargement de la question...</p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {afficherExplication && (
-              <Alert className={`mt-6 ${reponseCorrecte ? 'bg-green-50 border-green-300 text-green-800' : 'bg-yellow-50 border-yellow-300 text-yellow-800'}`}>
-                <AlertTitle>Explication</AlertTitle>
-                <AlertDescription>{explication}</AlertDescription>
-              </Alert>
-            )}
+  // B. ÉCRAN 1 : PAGE D'ACCUEIL
+  if (!quizLance) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-900 to-black text-white p-6">
+        <ShieldCheck className="w-24 h-24 text-blue-400 mb-6 animate-pulse" />
+        <h1 className="text-5xl font-extrabold mb-4 text-center tracking-tight">QUIZ CYBER</h1>
+        <p className="text-xl text-blue-100 mb-12 text-center max-w-lg">
+          Testez vos réflexes face aux menaces numériques. Serez-vous à la hauteur pour protéger vos données ?
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 w-full max-w-3xl">
+          <div className="bg-white/10 p-4 rounded-xl text-center backdrop-blur-sm">
+            <Trophy className="mx-auto mb-2 text-yellow-400" />
+            <p className="text-sm">Gagnez des points</p>
+          </div>
+          <div className="bg-white/10 p-4 rounded-xl text-center backdrop-blur-sm">
+            <PlayCircle className="mx-auto mb-2 text-green-400" />
+            <p className="text-sm">{questions.length} Questions</p>
+          </div>
+          <div className="bg-white/10 p-4 rounded-xl text-center backdrop-blur-sm">
+            <ShieldCheck className="mx-auto mb-2 text-blue-400" />
+            <p className="text-sm">Apprenez en jouant</p>
           </div>
         </div>
-      )}
+        <Button 
+          size="lg" 
+          onClick={() => setQuizLance(true)}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-12 py-8 text-2xl rounded-full shadow-lg shadow-blue-500/20 transition-all hover:scale-105"
+        >
+          COMMENCER L'ENTRAINEMENT
+        </Button>
+      </div>
+    );
+  }
+
+  // C. ÉCRAN 2 : PSEUDO
+  if (!joueurPret) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4">
+        <FormulaireJoueur onJoueurCree={() => setJoueurPret(true)} />
+      </div>
+    );
+  }
+
+  // D. ÉCRAN 3 : LE QUIZ
+  return (
+    <div className="min-h-screen bg-gray-50 pb-12">
+      <Toaster />
+      <Alert className="bg-blue-600 text-white border-none rounded-none py-4">
+        <div className="max-w-7xl mx-auto flex justify-between items-center w-full">
+           <div>
+             <AlertTitle className="text-lg">Agent : {joueurNom}</AlertTitle>
+             <AlertDescription className="text-blue-100 opacity-80">Mission de sécurisation en cours...</AlertDescription>
+           </div>
+           <div className="text-right">
+             <p className="text-sm font-bold uppercase opacity-60">Score actuel</p>
+             <p className="text-2xl font-black">{score} / {questions.length}</p>
+           </div>
+        </div>
+      </Alert>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Illustration */}
+          <Card className="overflow-hidden border-none shadow-xl">
+            <CardContent className="p-0 relative aspect-video bg-gray-200">
+              {question?.images ? (
+                <Image src={question.images} alt="Cyber security" fill className="object-cover" />
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-400">Pas d'image</div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Question & Réponses */}
+          <Card className="border-none shadow-xl">
+            <CardHeader className="border-b bg-gray-50/50">
+              <div className="flex justify-between items-center">
+                <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase">
+                  Question {questionIndex + 1}
+                </span>
+                <span className="text-gray-400 text-sm italic">Cyber Quiz v1.0</span>
+              </div>
+              <CardTitle className="text-2xl mt-4 leading-snug">{question?.texte}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {question?.reponses?.map((rep: any) => (
+                <Button
+                  key={rep.id}
+                  variant={afficherExplication ? "outline" : "default"}
+                  className={`w-full h-auto py-5 px-6 text-lg justify-start text-left whitespace-normal transition-all ${
+                    afficherExplication && rep.est_correcte ? "border-green-500 bg-green-50 text-green-700" : ""
+                  }`}
+                  onClick={() => handleClick(rep)}
+                  disabled={afficherExplication}
+                >
+                  {rep.texte}
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Explication */}
+        {afficherExplication && (
+          <Alert className={`mt-8 animate-in slide-in-from-bottom-4 duration-500 ${
+            reponseCorrecte ? 'bg-green-100 border-green-400 text-green-900' : 'bg-red-100 border-red-400 text-red-900'
+          }`}>
+            <AlertTitle className="font-bold flex items-center gap-2">
+              {reponseCorrecte ? "✅ Excellent !" : "❌ Analyse de l'erreur"}
+            </AlertTitle>
+            <AlertDescription className="text-lg mt-2">{explication}</AlertDescription>
+          </Alert>
+        )}
+      </div>
     </div>
   );
 }
