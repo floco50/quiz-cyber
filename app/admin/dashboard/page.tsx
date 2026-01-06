@@ -9,9 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast, Toaster } from "sonner";
-import { Loader2, List, Plus, BarChart, LogOut, Zap, CheckCircle, XCircle } from 'lucide-react';
+import { 
+  Loader2, List, Plus, BarChart, LogOut, 
+  CheckCircle, XCircle, Image as ImageIcon, MessageSquare, Shield, Trash2 
+} from 'lucide-react';
 
-// --- INTERFACES TYPESCRIPT ---
+// --- TYPES ---
 interface Reponse {
   id: number;
   texte: string;
@@ -23,8 +26,6 @@ interface Question {
   texte: string;
   explication: string | null;
   images: string | null;
-  image_credit_nom: string | null;
-  image_credit_url: string | null;
   reponses: Reponse[];
 }
 
@@ -34,215 +35,168 @@ interface Stat {
 }
 
 export default function AdminDashboard() {
-  // --- ÉTATS TYPÉS ---
+  const router = useRouter();
+  
   const [questions, setQuestions] = useState<Question[]>([]);
   const [stats, setStats] = useState<Stat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const router = useRouter();
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
   const [newQuestion, setNewQuestion] = useState("");
   const [newExplication, setNewExplication] = useState("");
   const [newImage, setNewImage] = useState("");
-  const [newImageCreditName, setNewImageCreditName] = useState("");
-  const [newImageCreditURL, setNewImageCreditURL] = useState("");
-
-  // Record<number, string> signifie que la clé est l'ID (number) et la valeur le texte (string)
   const [newAnswerTexts, setNewAnswerTexts] = useState<Record<number, string>>({});
 
-  // ----------------------------------------------------
-  // I. AUTHENTIFICATION & REDIRECTION
-  // ----------------------------------------------------
   useEffect(() => {
-    if (localStorage.getItem("is_admin") !== "true") {
-      router.push("/admin/"); 
-      return;
-    }
-    setIsAdmin(true);
-    
-    const fetchData = async () => {
-        await Promise.all([loadQuestions(), loadStats()]);
-        setLoading(false);
-    }
-    fetchData();
+    const checkAuth = async () => {
+      if (typeof window !== "undefined") {
+        const adminStatus = localStorage.getItem("is_admin");
+        if (adminStatus !== "true") {
+          router.push("/admin");
+          return;
+        }
+
+        setIsAuthorized(true);
+        try {
+          await Promise.all([fetchQuestions(), fetchStats()]);
+        } catch (error) {
+          console.error("Erreur:", error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+    checkAuth();
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("is_admin");
-    localStorage.removeItem("admin_email");
-    toast.info("Déconnexion réussie !");
-    setTimeout(() => {
-        router.push("/");
-    }, 500);
+  const fetchQuestions = async () => {
+    const { data, error } = await supabase
+      .from("questions")
+      .select(`id, texte, explication, images, reponses:reponse(id, texte, est_correcte)`)
+      .order("id", { ascending: false });
+    if (!error) setQuestions(data as Question[]);
   };
 
-  // ----------------------------------------------------
-  // II. FONCTIONS DE GESTION DE SUPABASE
-  // ----------------------------------------------------
-
-  const loadQuestions = async () => {
-    const { data, error } = await supabase.from("questions").select(`
-      id,
-      texte,
-      explication,
-      images,
-      image_credit_nom,
-      image_credit_url,
-      reponses:reponse(id, texte, est_correcte)
-    `).order("id", { ascending: false });
-
-    if (error) {
-      console.error(error);
-      toast.error("Erreur lors du chargement des questions.");
-      return;
-    }
-
-    // On force le cast si nécessaire, mais avec l'interface c'est plus propre
-    setQuestions(data as Question[]);
-  };
-
-  const loadStats = async () => {
+  const fetchStats = async () => {
     const { data, error } = await supabase.rpc("get_question_stats");
-    if (error) {
-        console.error("Erreur RPC get_question_stats:", error);
-        toast.error("Erreur lors du chargement des statistiques.");
-    }
-    else setStats(data as Stat[]);
+    if (!error && data) setStats(data as Stat[]);
   };
 
-  const addQuestion = async () => {
-    if (!newQuestion.trim()) return toast.error("La question est vide");
-
+  const handleAddQuestion = async () => {
+    if (!newQuestion.trim()) return toast.error("Question vide");
     const { error } = await supabase.from("questions").insert({
       texte: newQuestion.trim(),
       explication: newExplication.trim() || null,
       images: newImage.trim() || null,
-      image_credit_nom: newImageCreditName.trim() || null,
-      image_credit_url: newImageCreditURL.trim() || null,
     });
-
-    if (error) {
-        console.error("Erreur ajout question :", error);
-        return toast.error("Erreur lors de l'ajout de la question");
-    }
-
-    toast.success("Question ajoutée avec succès !");
+    if (error) return toast.error("Erreur d'ajout");
+    toast.success("Question ajoutée !");
     setNewQuestion("");
     setNewExplication("");
     setNewImage("");
-    setNewImageCreditName("");
-    setNewImageCreditURL("");
-    loadQuestions(); 
+    fetchQuestions();
   };
 
-  const handleAnswerInputChange = (questionId: number, value: string) => {
-    setNewAnswerTexts(prev => ({
-        ...prev,
-        [questionId]: value,
-    }));
+  const handleDeleteQuestion = async (id: number) => {
+    if (!confirm("Supprimer cette question et toutes ses réponses ?")) return;
+    const { error } = await supabase.from("questions").delete().eq("id", id);
+    if (error) return toast.error("Erreur de suppression");
+    toast.success("Question supprimée");
+    fetchQuestions();
   };
 
-  const addAnswer = async (questionId: number, est_correcte: boolean) => {
+  const handleAddAnswer = async (questionId: number, isCorrect: boolean) => {
     const texte = newAnswerTexts[questionId];
-    if (!texte || texte.trim() === "") return toast.error("Réponse vide");
-    
-    const sanitizedText = texte.trim(); 
-
+    if (!texte?.trim()) return toast.error("Texte manquant");
     const { error } = await supabase.from("reponse").insert({
       question_id: questionId,
-      texte: sanitizedText,
-      est_correcte,
+      texte: texte.trim(),
+      est_correcte: isCorrect,
     });
-
-    if (error) {
-        console.error("Erreur ajout réponse :", error);
-        return toast.error("Erreur ajout réponse");
-    }
-    
-    toast.success(`Réponse ${est_correcte ? 'correcte' : 'fausse'} ajoutée !`);
-    
-    setNewAnswerTexts(prev => {
-        const newState = { ...prev };
-        delete newState[questionId];
-        return newState;
-    });
-    loadQuestions(); 
+    if (error) return toast.error("Erreur");
+    toast.success("Réponse ajoutée");
+    setNewAnswerTexts(prev => ({ ...prev, [questionId]: "" }));
+    fetchQuestions();
   };
-  
-  // ----------------------------------------------------
-  // III. AFFICHAGE
-  // ----------------------------------------------------
-  if (!isAdmin || loading) {
+
+  const handleDeleteAnswer = async (id: number) => {
+    const { error } = await supabase.from("reponse").delete().eq("id", id);
+    if (error) return toast.error("Erreur");
+    toast.success("Option supprimée");
+    fetchQuestions();
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-        <p className="mt-3">Chargement du Dashboard...</p>
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center text-white">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-4" />
+        <p className="font-medium">Accès sécurisé en cours...</p>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900/10 to-gray-900 p-6 text-white">
-      <Toaster />
+  if (!isAuthorized) return null;
 
-      <div className="flex justify-between items-center mb-8 pb-4 border-b border-white/10">
-        <h1 className="text-4xl font-extrabold flex items-center gap-3">
-          <Zap className="w-8 h-8 text-blue-500"/> CyberQuiz Admin
-        </h1>
-        <Button onClick={handleLogout} variant="ghost" className="text-gray-300 hover:bg-white/10 hover:text-white">
-            <LogOut className="w-5 h-5 mr-2" /> Déconnexion
-        </Button>
-      </div>
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-4 md:p-8">
+      <Toaster position="top-right" richColors />
 
       <div className="max-w-6xl mx-auto">
-        <Tabs defaultValue="questions" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-white/10 text-white border border-white/20">
-            <TabsTrigger value="questions" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                <List className="w-4 h-4 mr-2" /> Questions
-            </TabsTrigger>
-            <TabsTrigger value="add" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                <Plus className="w-4 h-4 mr-2" /> Ajouter
-            </TabsTrigger>
-            <TabsTrigger value="stats" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                <BarChart className="w-4 h-4 mr-2" /> Statistiques
-            </TabsTrigger>
+        <div className="flex justify-between items-center mb-8 bg-white/5 p-6 rounded-2xl border border-white/10 backdrop-blur-sm">
+          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+            <Shield className="text-blue-500 w-8 h-8" /> 
+            CyberQuiz Admin
+          </h1>
+          <Button onClick={() => { localStorage.clear(); router.push("/admin"); }} variant="destructive" size="sm">
+            <LogOut className="mr-2 h-4 w-4" /> Déconnexion
+          </Button>
+        </div>
+
+        <Tabs defaultValue="list" className="space-y-6">
+          <TabsList className="bg-white/10 border border-white/10 p-1">
+            <TabsTrigger value="list" className="px-6">Questions</TabsTrigger>
+            <TabsTrigger value="add" className="px-6">Nouveau</TabsTrigger>
+            <TabsTrigger value="stats" className="px-6">Stats</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="questions" className="mt-6">
-            <h2 className="text-2xl font-semibold mb-4 text-gray-200">Liste des Questions ({questions.length})</h2>
+          <TabsContent value="list" className="space-y-4">
+            {questions.length === 0 && <p className="text-center py-10 text-gray-500">Aucune question trouvée.</p>}
             {questions.map((q) => (
-              <Card key={q.id} className="mb-4 bg-white/5 border-white/20">
-                <CardHeader>
-                  <CardTitle className="text-xl text-blue-300">Q{q.id} — {q.texte}</CardTitle>
+              <Card key={q.id} className="bg-white/5 border-white/10 text-white overflow-hidden">
+                <CardHeader className="flex flex-row items-start justify-between space-y-0 bg-white/5">
+                  <CardTitle className="text-blue-400 text-lg pr-4">Q{q.id}: {q.texte}</CardTitle>
+                  <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-500 hover:bg-red-500/10" onClick={() => handleDeleteQuestion(q.id)}>
+                    <Trash2 size={18} />
+                  </Button>
                 </CardHeader>
-                <CardContent>
-                  {q.images && (
-                    <img src={q.images} alt="" className="w-full max-w-xs h-auto rounded mb-3 border border-white/10 object-cover" />
-                  )}
-                  {q.explication && <p className="text-sm opacity-90 mb-4 bg-gray-700/50 p-3 rounded border border-gray-600/50 text-gray-300"><span className="font-bold">Explication :</span> {q.explication}</p>}
-                  
-                  <h3 className="font-semibold mb-2 text-lg text-gray-200">Réponses :</h3>
-                  <ul className="space-y-2">
-                    {q.reponses?.map((r) => (
-                        <li key={r.id} className={`p-3 rounded flex items-center justify-between ${r.est_correcte ? "bg-green-700/40 border border-green-600/50" : "bg-red-700/40 border border-red-600/50"}`}>
-                          <span className="flex items-center">
-                            {r.est_correcte ? <CheckCircle className="w-4 h-4 mr-2 text-green-300" /> : <XCircle className="w-4 h-4 mr-2 text-red-300" />}
+                <CardContent className="space-y-4 pt-6">
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Options de réponse</p>
+                      {q.reponses?.map((r) => (
+                        <div key={r.id} className={`group p-3 rounded-lg text-sm flex items-center justify-between ${r.est_correcte ? 'bg-green-500/10 border border-green-500/20' : 'bg-red-500/10 border border-red-500/20'}`}>
+                          <span className="flex items-center gap-2">
+                            {r.est_correcte ? <CheckCircle size={14} className="text-green-500"/> : <XCircle size={14} className="text-red-500"/>} 
                             {r.texte}
                           </span>
-                        </li>
-                    ))}
-                  </ul>
-
-                  <div className="mt-6 pt-4 border-t border-white/10">
-                    <Input
-                      placeholder="Texte de la nouvelle réponse"
-                      value={newAnswerTexts[q.id] || ""}
-                      onChange={(e) => handleAnswerInputChange(q.id, e.target.value)}
-                      className="mb-3 bg-gray-800 border-gray-700 text-white"
-                    />
-                    <div className="flex gap-3">
-                      <Button onClick={() => addAnswer(q.id, true)} disabled={!newAnswerTexts[q.id]} className="flex-1 bg-green-600">Bonne réponse</Button>
-                      <Button onClick={() => addAnswer(q.id, false)} disabled={!newAnswerTexts[q.id]} className="flex-1 bg-red-600">Mauvaise réponse</Button>
+                          <button onClick={() => handleDeleteAnswer(r.id)} className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-white transition-opacity">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-3 bg-black/30 p-4 rounded-xl border border-white/5">
+                      <p className="text-xs font-bold text-gray-500 uppercase">Ajouter une option</p>
+                      <Input 
+                        placeholder="Texte de la réponse..." 
+                        value={newAnswerTexts[q.id] || ""}
+                        onChange={(e) => setNewAnswerTexts(prev => ({ ...prev, [q.id]: e.target.value }))}
+                        className="bg-gray-900 border-white/10 focus:ring-blue-500"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => handleAddAnswer(q.id, true)}>Correcte</Button>
+                        <Button size="sm" className="flex-1 bg-red-600 hover:bg-red-700" onClick={() => handleAddAnswer(q.id, false)}>Fausse</Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -250,27 +204,50 @@ export default function AdminDashboard() {
             ))}
           </TabsContent>
 
-          <TabsContent value="add" className="mt-6">
-            <Card className="bg-white/5 border-white/20">
-              <CardContent className="space-y-4 pt-6">
-                <Textarea placeholder="Texte de la question" value={newQuestion} onChange={(e) => setNewQuestion(e.target.value)} className="bg-gray-800 border-gray-700 text-white" />
-                <Textarea placeholder="Explication détaillée" value={newExplication} onChange={(e) => setNewExplication(e.target.value)} className="bg-gray-800 border-gray-700 text-white" />
-                <Input placeholder="URL de l'image" value={newImage} onChange={(e) => setNewImage(e.target.value)} className="bg-gray-800 border-gray-700 text-white" />
-                <Button className="w-full bg-blue-600" onClick={addQuestion} disabled={!newQuestion.trim()}>Ajouter la Question</Button>
+          <TabsContent value="add">
+            <Card className="bg-white/5 border-white/10 text-white max-w-xl mx-auto backdrop-blur-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Plus className="text-blue-500"/> Créer une question</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Question</label>
+                  <Textarea placeholder="Ex: Quel protocole est utilisé pour sécuriser le web ?" value={newQuestion} onChange={e => setNewQuestion(e.target.value)} className="bg-gray-900 border-white/10 min-h-[100px]" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Explication pédagogique</label>
+                  <Textarea placeholder="Sera affichée après la réponse..." value={newExplication} onChange={e => setNewExplication(e.target.value)} className="bg-gray-900 border-white/10" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase">URL de l'image (optionnel)</label>
+                  <Input placeholder="https://..." value={newImage} onChange={e => setNewImage(e.target.value)} className="bg-gray-900 border-white/10" />
+                </div>
+                <Button className="w-full bg-blue-600 hover:bg-blue-700 py-6 text-lg font-semibold mt-4" onClick={handleAddQuestion}>
+                  Publier la Question
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="stats" className="mt-6">
-            <Card className="bg-white/5 border-white/20">
-              <CardContent className="pt-6">
-                {stats.map((s) => (
-                  <div key={s.question_id} className="mb-3 p-3 rounded bg-gray-700/30 border border-gray-600/50">
-                    <p className="font-bold">Question ID: {s.question_id} - Réussite : {s.success_rate}%</p>
+          <TabsContent value="stats">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {stats.length === 0 && <p className="col-span-full text-center py-10 text-gray-500">Aucune donnée statistique disponible.</p>}
+              {stats.map(s => (
+                <Card key={s.question_id} className="bg-white/5 border-white/10 text-white p-5 hover:bg-white/10 transition-colors">
+                  <p className="text-[10px] font-black text-blue-500 uppercase tracking-tighter mb-1">Analyse Question #{s.question_id}</p>
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-3xl font-bold">{s.success_rate}%</p>
+                    <p className="text-xs text-gray-400">de réussite</p>
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  <div className="w-full bg-gray-800 h-1.5 rounded-full mt-3">
+                    <div 
+                      className="bg-blue-500 h-full rounded-full" 
+                      style={{ width: `${s.success_rate}%` }}
+                    ></div>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </TabsContent>
         </Tabs>
       </div>
