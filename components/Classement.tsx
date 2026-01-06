@@ -62,13 +62,13 @@ export default function Classement() {
     };
 
     if (loading) {
-        return <p className="text-center mt-10 text-gray-500">Chargement du classement...</p>;
+        return <p className="text-center mt-10 text-white-500">Chargement du classement...</p>;
     }
 
     return (
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 mt-12">
             <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
-                <h2 className="text-3xl font-bold text-gray-800">Classement</h2>
+                <h2 className="text-3xl font-bold text-white-800">Classement</h2>
                 <button
                     onClick={fetchClassement}
                     disabled={refreshing}
