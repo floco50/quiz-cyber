@@ -30,12 +30,14 @@ export default function Home() {
 
   const question = questions[questionIndex];
 
+  // 1. CHARGEMENT DES QUESTIONS + STATISTIQUES
   useEffect(() => {
     async function fetchQuestion() {
       const { data, error } = await supabase
         .from("questions")
         .select(`
           id, texte, images, image_credit_nom, image_credit_url, explication,
+          nb_reussites, nb_echecs,
           reponses:reponse!inner (id, texte, est_correcte)
         `)
         .order("id", { ascending: true })
@@ -64,11 +66,22 @@ export default function Home() {
     }
   }, [joueurPret]);
 
-  function handleClick(rep: any) {
+  // 2. GESTION DU CLIC ET MISE À JOUR DES STATS
+  async function handleClick(rep: any) {
     if (!question || afficherExplication) return;
 
     const estCorrect = String(rep.est_correcte) === 'true' || rep.est_correcte === true;
     const message = estCorrect ? "Bonne réponse !" : "Mauvaise réponse !";
+
+    // Mise à jour des statistiques dans la base de données
+    const columnToUpdate = estCorrect ? 'nb_reussites' : 'nb_echecs';
+    
+    // On lance l'update en arrière-plan sans bloquer l'UI
+    supabase.rpc(estCorrect ? 'increment_reussite' : 'increment_echec', { 
+      question_id: question.id 
+    }).then(({ error }) => {
+        if (error) console.error("Erreur stats:", error);
+    });
 
     toast(message, { icon: estCorrect ? "✅" : "❌" });
     setExplication(message + " " + (question.explication || ""));
@@ -180,7 +193,7 @@ export default function Home() {
 
           {/* Illustration & Crédits */}
           <div className="space-y-4">
-            <Card className="rounded-xl overflow-hidden border-none shadow-2xl bg-gray-950 w-full h-full p-0">
+            <Card className="rounded-xl overflow-hidden border-none shadow-2xl bg-gray-950 w-full p-0">
               <CardContent className="p-0 m-0 w-full relative">
                 {question?.images ? (
                   <Image
@@ -189,18 +202,17 @@ export default function Home() {
                     width={0}
                     height={0}
                     sizes="100vw"
-                    style={{ width: '100%', height: 'auto' }} // Garde les proportions naturelles
+                    style={{ width: '100%', height: 'auto' }}
                     className="rounded-xl"
                   />
                 ) : (
-                  <div className="flex items-center justify-center h-full text-white/20">
+                  <div className="flex items-center justify-center h-48 text-white/20">
                     Pas d'image
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* AFFICHAGE DES CRÉDITS */}
             {question?.image_credit_nom && (
               <div className="flex items-center justify-end gap-2 text-xs text-white/50 italic px-2">
                 <span>Crédit image : </span>
@@ -248,14 +260,20 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* Explication */}
+        {/* Explication + Statistiques */}
         {afficherExplication && (
-          <Alert className={`mt-12 animate-in slide-in-from-bottom-4 duration-500 border-none backdrop-blur-md ${reponseCorrecte ? 'bg-green-500/20 text-green-200' : 'bg-red-500/20 text-red-200'
-            }`}>
+          <Alert className={`mt-12 animate-in slide-in-from-bottom-4 duration-500 border-none backdrop-blur-md ${reponseCorrecte ? 'bg-green-500/20 text-green-200' : 'bg-red-500/20 text-red-200'}`}>
             <AlertTitle className="font-bold flex items-center gap-2 text-xl">
               {reponseCorrecte ? "✅ Excellent !" : "❌ Analyse de l'erreur"}
             </AlertTitle>
-            <AlertDescription className="text-lg mt-2 opacity-90">{explication}</AlertDescription>
+            <AlertDescription className="text-lg mt-2 opacity-90">
+              <p>{explication}</p>
+              <div className="mt-4 pt-4 border-t border-white/10 text-sm flex gap-4 opacity-70">
+                 <span>Statistiques mondiales :</span>
+                 <span className="text-green-400">{question.nb_reussites || 0} réussites</span>
+                 <span className="text-red-400">{question.nb_echecs || 0} échecs</span>
+              </div>
+            </AlertDescription>
           </Alert>
         )}
       </div>
